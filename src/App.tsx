@@ -142,23 +142,38 @@ export default function App() {
     setIsModalOpen(false);
   };
 
-  const handleSendChat = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSendChat = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!chatInput.trim()) return;
 
     const userText = chatInput;
-    setMessages((prev) => [...prev, { sender: "user", text: userText }]);
     setChatInput("");
 
-    setTimeout(() => {
-      let reply = "Your overall budget is on track, but watch out for small canteen snacks!";
-      if (userText.toLowerCase().includes("food") || userText.toLowerCase().includes("canteen")) {
-        reply = "You have spent ₹850 on Food this week. Cooking or using campus mess for 2 days saves around ₹350.";
-      } else if (userText.toLowerCase().includes("afford") || userText.toLowerCase().includes("movie")) {
-        reply = "Checking your remaining safe spend limit (₹178/day)... You can afford it if you limit outings this weekend!";
-      }
-      setMessages((prev) => [...prev, { sender: "ai", text: reply }]);
-    }, 500);
+    // Append user's message to UI
+    setMessages((prev) => [...prev, { sender: "user", text: userText }]);
+
+    try {
+      const res = await fetch("/api/copilot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userText,
+          context: {
+            remainingBudget: budgetLimit - totalSpent,
+            totalSpent: totalSpent,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      const botReply = data.reply || "Sorry, I couldn't process that response.";
+      setMessages((prev) => [...prev, { sender: "ai", text: botReply }]);
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        { sender: "ai", text: "Error connecting to Copilot service. Please try again." },
+      ]);
+    }
   };
 
   return (
