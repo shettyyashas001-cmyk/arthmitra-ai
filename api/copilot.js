@@ -13,8 +13,8 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // Reject non-POST methods
-  if (req.method !== 'POST') {
+  // Reject non-POST and non-GET methods
+  if (req.method !== 'POST' && req.method !== 'GET') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
@@ -25,11 +25,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Robustly parse req.body
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    // Robustly parse req.body or use req.query
+    let body = {};
+    if (req.method === 'POST') {
+      body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    }
     
     // Extract message and context
-    const { message, context } = body || {};
+    const message = req.method === 'POST' ? body.message : req.query?.message;
+    const context = req.method === 'POST' ? body.context : null;
     const userMessage = message || '';
 
     // Pass student financial context in the system prompt
