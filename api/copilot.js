@@ -1,4 +1,5 @@
 export default async function handler(req, res) {
+  // Add full CORS headers
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -7,53 +8,67 @@ export default async function handler(req, res) {
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
   );
 
+  // Handle OPTIONS request
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
+  // Reject non-POST methods
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  // Read secret key
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: 'GEMINI_API_KEY environment variable is missing' });
+    return res.status(500).json({ error: 'OPENAI_API_KEY is not configured' });
   }
 
   try {
+    // Robustly parse req.body
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    
+    // Extract message and context
     const { message, context } = body || {};
+    const userMessage = message || '';
 
-    const systemPrompt = `You are ArthMitra AI, an intelligent financial copilot for college students in India.
-Context: Student's remaining allowance is ₹${context?.remainingBudget ?? 10500}, spent so far is ₹${context?.totalSpent ?? 1500}.
-Provide a clear, realistic, and encouraging budget answer in 2-3 concise sentences.`;
+    // Pass student financial context in the system prompt
+    const systemPrompt = `You are ArthMitra AI, an empathetic, practical financial copilot for Indian college students.
+Keep in mind the student's context: remaining allowance is ₹${context?.remainingBudget ?? 'unknown'}, total spent so far is ₹${context?.totalSpent ?? 'unknown'}.
+Give concise, relatable advice in a friendly tone.`;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-    const apiRes = await fetch(url, {
+    // Target OpenAI endpoint
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
       body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: `${systemPrompt}\n\nUser Question: ${message || 'Hi'}` }],
-          },
-        ],
+        model: 'gpt-4o-mini',
+        temperature: 0.7,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage }
+        ]
       }),
     });
 
-    const data = await apiRes.json();
+    const data = await response.json();
 
-    if (!apiRes.ok) {
-      console.error('Gemini API Error:', data);
-      return res.status(apiRes.status).json({ error: data.error?.message || 'Gemini API Error' });
+    if (!response.ok) {
+      console.error("OpenAI API Error:", data);
+      return res.status(response.status).json({ error: data.error?.message || 'Error communicating with OpenAI' });
     }
 
-    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't process that response.";
-    return res.status(200).json({ reply });
+    // Extract the generated text
+    const text = data.choices[0].message.content;
+    
+    // Return { "reply": text }
+    return res.status(200).json({ reply: text });
+    
   } catch (error) {
-    console.error('Handler Error:', error);
-    return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    console.error("Error in copilot API handler:", error);
+    return res.status(500).json({ error: 'Internal Server Error', details: error.message });
   }
 }
